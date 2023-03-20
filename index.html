@@ -1,15 +1,20 @@
 <meta charset="utf-8">
+<link rel="stylesheet" href="https://casual-effects.com/markdeep/latest/website.css?">
 
-# DIFAI
+            **DIFAI**
 
 This is a basic site for the DIFAI project. Note that we'd probably add a bit of extra HTML to add a nav bar etc. to this document.
 
 ## Brief description
 
-![A schematic of the DIFAI optimal mechanism model.](imgs/optimal_mechanism)
+![A schematic of the DIFAI active inference model.](imgs/active_inference.png)
 
-The key active inference equation.
-$$D_{KL}[Q(x)\|P(x|y)] - ln P(y) = F[Q,y] = -\mathbb{E}_{Q(x)}[\ln P(y,x)]- H(Q(x)] = D_{KL}[Q(x)\|P(x)]-\mathbb{E}_{Q(x)[\ln P(y|x)]$$
+The key active inference equations.
+
+$$D_{KL}[Q(x)\|P(x|y)] - \ln P(y)$$
+$$ = F[Q,y] $$
+$$ = -\mathbb{E}_{Q(x)}[\ln P(y,x)] - H(Q(x)] $$
+$$ = D_{KL}[Q(x)\|P(x)]-\mathbb{E}_{Q(x)}[\ln P(y|x)]$$
 
 # News
 
