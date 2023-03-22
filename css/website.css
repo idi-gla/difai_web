@@ -1,28 +1,33 @@
 @import url('https://fonts.googleapis.com/css?family=Raleway:800i');
+@import url('https://fonts.googleapis.com/css?family=Comfortaa:400');
+@import url('https://fonts.googleapis.com/css?family=PT+Sans:400');
 
 body#md {
     position: absolute;
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: "PT Sans", Arial, sans-serif;
     text-align: left;
     left: 200px;
     right: 0px;
     margin: 0;
     padding: 0;
     max-width: none;
+
     color: #555;
     font-size: 15px;
-    padding-right: 20px;
+    padding-right: 4em;
     overflow-x: hidden;
     text-overflow: ellipses;
+    font-style: normal;
+    font-size: 24px;
 }
 
 
 .md .longTOC {
     width: 170px;
     display: block;
-    border-right: 3px solid #00c8c8;
+    border-right: 5px solid #00c8c8ff;
     overflow-y: scroll;
-    font-size: 15px;
+    font-size: 18px;
     font-family: inherit;
     background: #FFF;
     overflow: hidden;
@@ -30,8 +35,9 @@ body#md {
     top: 90px;
     left: -190px;
     bottom: 0px;
-    margin: 0px;
-    padding: 0px;
+    margin: 2px;
+    padding: 2px;
+    padding-top: 20px;
 }
 
 .scrolled .md .longTOC {
@@ -54,7 +60,15 @@ body#md {
 
 .md .longTOC a {
     color: #000;
+    font-size: 120%;
+
 }
+
+.md .longTOC a::before {
+
+    content: '» ';
+}
+
 
 .md .tocHeader,
 .md .tocNumber {
@@ -81,6 +95,7 @@ contents,
 .md .mediumTOC,
 .md .longTOC {
     font-family: inherit;
+    font-style: normal;
 }
 
 
@@ -89,7 +104,7 @@ contents,
 .md h2,
 .md h3,
 .md h4 {
-    font-family: 'Raleway', Arial;
+    font-family: 'Comfortaa', Arial;
     font-weight: 800;
 }
 
@@ -101,6 +116,8 @@ contents,
 .md h6 {
     color: #00c8c8;
     border-color: inherit;
+    border-bottom: 1px solid #00c8c8;
+    font-size: 120%;
 }
 
 .md h2,
@@ -111,6 +128,7 @@ contents,
 
 .md .tocTop {
     display: inline;
+
 }
 
 .md div.title,
@@ -120,13 +138,14 @@ contents,
 
 .md div.title {
     position: absolute;
-    top: -14px;
+    top: -0px;
     left: -200px;
     right: 0px;
     font-weight: 900;
     padding-left: 10px;
     padding-top: 20px;
     padding-bottom: 20px;
+
     text-shadow: 0px 0px 3px #00c8c8;
     background-color: #00c8c8;
     background-image: url('../imgs/website_logo.png');
@@ -140,4 +159,51 @@ contents,
 
 .md div.afterTitles {
     height: 90px;
+}
+
+/* nav bar */
+.navbar {
+    background-color: #fff;
+    height: 50px;
+    width: 100%;
+    /* rounded edges */
+
+}
+
+.navbar ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    color: black;
+}
+
+.navbar li {
+    float: left;
+    color: black;
+}
+
+.navbar li a {
+    display: block;
+    color: black;
+    text-align: center;
+    padding: 16px;
+    text-decoration: none;
+}
+
+.navbar li a:link {
+    color: black;
+    text-decoration: none;
+}
+
+.navbar li a:visited {
+    color: gray;
+}
+
+
+.navbar li a:hover {
+    background-color: #00c8c8;
+    color: black;
+    text-decoration: none;
+    -webkit-border-radius: 0px 0px 10px 10px;
 }
