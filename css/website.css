@@ -134,6 +134,7 @@ contents,
 .md div.title,
 .md div.subtitle {
     text-align: left;
+    background-image: url('../imgs/LOGO_ERC-FLAG_EU_.png');
 }
 
 .md div.title {
