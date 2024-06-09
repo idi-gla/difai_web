@@ -15,14 +15,14 @@ It is not intended to be an exhaustive examination of every line of code in the 
 
 Each of the following sections describes a single section of the touch input pipeline, working through in order from kernel to operating system to the point where the events are handed off to applications.
 
-1. [Touchscreen drivers and the Linux kernel](#1-touchscreen-drivers-and-the-linux-kernel)
-2. [Linux input event subsystem](#2-the-linux-input-event-subsystem)
-3. [Android C++ framework](#3-android-c-framework-input-event-handling)
-4. [Android Java framework](#4-android-java-framework)
+1. Touchscreen drivers and the Linux kernel
+2. Linux input event subsystem
+3. Android C++ framework
+4. Android Java framework
 
 Most of the information presented below is device-agnostic; some specific references are made to the Pixel Tablet and Pixel 7 Pro in section 1.
 
-## 1\. Touchscreen drivers and the Linux kernel
+## 1. Touchscreen drivers and the Linux kernel
 
 The ultimate source of touch events for most Android devices is the Linux kernel driver for the integrated touch sensing hardware. There are many different sensors available and so the implementation of the driver will vary from device to device, but the basic approach will be the same in most cases.
 
@@ -91,7 +91,7 @@ Proceed at your own risk!
 
 #### Device 1: Pixel Tablet
 
-##### 1\. Initial preparation
+##### 1. Initial preparation
 
 Follow the instructions at https://source.android.com/docs/setup/build/building-pixel-kernels to unlock the bootloader of your device, flash an appropriate Android build, and check out a copy of the kernel sources.
 
@@ -112,7 +112,7 @@ The required modification is shown in [this diff](https://review.lineageos.org/c
 
 Once the build process finishes successfully, you can proceed to the next section.
 
-##### 2\. Patching the kernel
+##### 2. Patching the kernel
 
 Download this patch file [pixel_tablet.patch](pixel_tablet.patch) and apply it to the source folder for the driver:
 
@@ -139,7 +139,7 @@ The second structure is an array of raw capacitive readings from the touchscreen
 
 The full structure size is 240 + 3202 = **3442 bytes**, so this is the minimum buffer size applications should use when reading from the character device.
 
-##### 3\. Flashing the kernel
+##### 3. Flashing the kernel
 
 To make flashing the various images to the device simpler, you can use the following shell script which should be copied into the directory where you checked out the kernel code:
 
@@ -181,7 +181,7 @@ This script will reboot the device multiple times as required to flash the vario
 
 You may find that the newly flashed device is very slow to boot. It can seem to hang for over 5 minutes on the boot logo screen, but if left long enough it should eventually finish booting successfully. This behaviour may be caused by some missing drivers or other misconfiguration introduced by the newly flashed kernel, but doesn't prevent the device from being used to access the raw touch data.
 
-##### 4\. Rooting the device
+##### 4. Rooting the device
 
 After patching, compiling, and flashing the modified kernel there is a final step required to make accessing the new character device more convenient: rooting the device to allow superuser access. This allows you to easily adjust permissions on the character device and also disable SELinux enforcement if necessary.
 
@@ -191,13 +191,13 @@ To make the new character device readable from a standard Android application, r
 
 #### Device 2: Pixel 7 Pro
 
-##### 1\. Initial preparation
+##### 1. Initial preparation
 
 Follow the same steps as for the Pixel Tablet. The only difference is that the command to compile the kernel uses a different script:
 
 > SKIP_MRPROPER=1 FAST_BUILD=1 BUILD_AOSP_KERNEL=1 ./build_cloudripper.sh
 
-##### 2\. Patching the kernel
+##### 2. Patching the kernel
 
 Download [pixel_7_pro.patch](pixel_7_pro.patch) and apply it to the source folder for the driver:
 
@@ -224,11 +224,11 @@ The second structure is an array of raw capacitive readings from the touchscreen
 
 The full structure size is 280 + 702 = **982 bytes**, so this is the minimum buffer size applications should use when reading from the character device.
 
-##### 3\. Flashing the kernel
+##### 3. Flashing the kernel
 
 Identical to the Pixel Tablet instructions.
 
-##### 4\. Rooting the device
+##### 4. Rooting the device
 
 Identical to the Pixel Tablet instructions.
 
@@ -239,7 +239,7 @@ Identical to the Pixel Tablet instructions.
 * [Source code for the Novatek touch sensor used by the Pixel Tablet](https://android.googlesource.com/kernel/google-modules/touch/novatek_touch/+/refs/heads/android-gs-tangorpro-5.10-android14/nt36xxx/)
 * [Source code for the Synaptics touch sensor used by the Pixel 7 Pro](https://android.googlesource.com/kernel/google-modules/touch/synaptics_touch/+/refs/heads/android-gs-pantah-5.10-android14)
 
-## 2\. The Linux input event subsystem
+## 2. The Linux input event subsystem
 
 ### 2.1 Handling multi-touch events
 
@@ -289,7 +289,7 @@ Another important task performed by the API is [finger tracking](https://www.ker
 * [Multi-touch protocol documentation](https://www.kernel.org/doc/html/latest/input/multi-touch-protocol.html)
 * [libinput: Palm detection](https://wayland.freedesktop.org/libinput/doc/1.11.3/palm_detection.html)
 
-## 3\. Android C++ framework input event handling
+## 3. Android C++ framework input event handling
 
 The Android operating system is split into two sections, one implemented in C++ and one implemented in Java. The C++ framework sits below the Java framework that applications interact with directly. implementing a raft of functionality best written in native code for various reasons.
 
@@ -335,7 +335,7 @@ This section contains a simplified outline of the event handling procedure (more
 
 This section explores the flow of events through the Android C++ framework in more detail, building on the overview presented in the previous section.
 
-![](android_cpp_touch2.png)
+![](imgs/android_cpp_touch2.png)
 
 ---
  
@@ -520,7 +520,7 @@ The final `return mChannnel->sendMessage(&msg);` line at the end of this method 
 * https://newandroidbook.com/files/AndroidInput.pdf
 * https://source.android.com/docs/core/graphics/surfaceflinger-windowmanager
 
-## 4\. Android Java framework
+## 4. Android Java framework
 
 ### 4.1 Important classes and their relationships
 
@@ -549,7 +549,7 @@ Further down in the same method, the newly created channel is associated with a 
 
 ### 4.3 Input events in the Java framework
 
-![](android_java_touch1.png)
+![](imgs/android_java_touch1.png)
 
 ---
 
