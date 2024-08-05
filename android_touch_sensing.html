@@ -5,6 +5,8 @@
 
 # The Android touch input pipeline
 
+*Last updated: 2024-08-05*
+
 This article aims to describe the flow of touchscreen events through the Android software stack. The starting point is the source code of the touchscreen drivers in the Android variant of the Linux kernel. Events then flow through the Linux input event subsystem, the Android C++ framework, the Android Java framework, and finally to Android applications.
 
 Android and Linux support multiple types of input events. The scope of this article is limited to touch events only, with the goal being to provide some insight into what goes on between the hardware and application levels.
