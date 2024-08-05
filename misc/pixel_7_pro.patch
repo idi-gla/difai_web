@@ -1,0 +1,343 @@
+diff --git a/syna_tcm2.c b/syna_tcm2.c
+index a594bac..01c8fc0 100644
+--- a/syna_tcm2.c
++++ b/syna_tcm2.c
+@@ -491,16 +491,18 @@ static void syna_set_report_rate_work(struct work_struct *work)
+     if (tcm->pwr_state != PWR_ON) {
+         LOGI("Touch is already off.");
+         return;
+     }
+ 
++    /* don't change touch reporting rate if touches are present, try again in 10ms */
+     if (tcm->touch_count != 0) {
+         queue_delayed_work(tcm->event_wq, &tcm->set_report_rate_work,
+                 msecs_to_jiffies(10));
+         return;
+     }
+ 
++    /* actually changing the reporting rate */
+     tcm->touch_report_rate_config = tcm->next_report_rate_config;
+     syna_tcm_set_dynamic_config(tcm->tcm_dev,
+             DC_REPORT_RATE_SWITCH,
+             tcm->touch_report_rate_config,
+             RESP_IN_ATTN);
+@@ -1767,10 +1769,12 @@ static irqreturn_t syna_dev_interrupt_thread(int irq, void *data)
+         /* forward the touch event to system */
+         ATRACE_BEGIN("report_input_events");
+         syna_dev_report_input_events(tcm);
+         ATRACE_END();
+     } else if (code == tcm->raw_data_report_code) {
++        /* handling a raw data report. if this is the first such report, the driver allocates
++         * the buffer below */
+         if (!tcm->raw_data_buffer) {
+             tcm->raw_data_buffer = kmalloc(
+                            sizeof(u16) * (tcm_dev->rows * tcm_dev->cols +
+                                   tcm_dev->rows + tcm_dev->cols),
+                            GFP_KERNEL);
+@@ -1779,12 +1783,32 @@ static irqreturn_t syna_dev_interrupt_thread(int irq, void *data)
+                 goto exit;
+             }
+         }
+         if (tcm->event_data.data_length == sizeof(u16) * (tcm_dev->rows * tcm_dev->cols +
+                                   tcm_dev->rows + tcm_dev->cols)) {
+-			memcpy(tcm->raw_data_buffer, tcm->event_data.buf,
+-			       tcm->event_data.data_length);
++            unsigned long flags;
++            u64 elapsed_time;
++
++            tcm->received_packets++;
++            tcm->cur_time = ktime_get_ns();
++
++            /* just checking the rate at which the firmware actually sends updates */
++            elapsed_time = (tcm->cur_time - tcm->start_time) / 1000000000ULL;
++            if(elapsed_time >= 30) 
++            {
++                LOGI("Received %d packets in 30s\n", tcm->received_packets);
++                tcm->received_packets = 0;
++                tcm->start_time = ktime_get_ns();
++            }
++
++            /* lock the buffer and copy in the current report data. this was previously
++             * a simple memcpy() but now there may be a user process reading from the 
++             * buffer via the character device at the same time as it's being updated here */
++            spin_lock_irqsave(&tcm->raw_data_lock, flags);
++            memcpy(tcm->raw_data_buffer, tcm->event_data.buf, tcm->event_data.data_length);
++            spin_unlock_irqrestore(&tcm->raw_data_lock, flags);
++
+             complete_all(&tcm->raw_data_completion);
+         } else {
+             LOGE("Raw data length: %d is incorrect.\n", tcm->event_data.data_length);
+         }
+     }
+@@ -1794,11 +1818,11 @@ static irqreturn_t syna_dev_interrupt_thread(int irq, void *data)
+     case REPORT_HEAT_MAP:
+         /* for 'heat map' ($c3) report,
+          * report data has been stored at tcm->event_data.buf;
+          * while, tcm->event_data.data_length is the size of data
+          */
+-		LOGD("Heat map data received, size:%d\n",
++        LOGI("Heat map data received, size:%d\n",
+             tcm->event_data.data_length);
+ #if IS_ENABLED(CONFIG_TOUCHSCREEN_OFFLOAD)
+         reserve_then_queue_frame(tcm, true);
+ #endif
+ #if IS_ENABLED(CONFIG_TOUCHSCREEN_HEATMAP)
+@@ -2787,20 +2811,30 @@ static void syna_panel_bridge_mode_set(struct drm_bridge *bridge,
+         syna_set_bus_ref(tcm, SYNA_BUS_REF_SCREEN_ON, true);
+ 
+     if (mode && tcm->hw_if->dynamic_report_rate) {
+         int vrefresh = drm_mode_vrefresh(mode);
+         LOGD("Display refresh rate %dHz", vrefresh);
++
++        /* once it has the refresh rate, the code checks if it's 120 or 90Hz and based
++         * on that it configures the touch report rate. 
++         * CONFIG_HIGH_REPORT_RATE is defined to be 0
++         * CONFIG_LOW_REPORT_RATE is defined to 1
++         *
++         * So here it's saying "if display rate is 90/120Hz, report touch data at 240Hz",
++         * "otherwise 120Hz". (the 120/240 values are indicated by comments) */
+         if (vrefresh == 120 || vrefresh == 90)
+             tcm->next_report_rate_config = CONFIG_HIGH_REPORT_RATE;
+         else
+             tcm->next_report_rate_config = CONFIG_LOW_REPORT_RATE;
+ 
+         if (tcm->last_vrefresh_rate != vrefresh)
+             cancel_delayed_work_sync(&tcm->set_report_rate_work);
+ 
+         if (tcm->next_report_rate_config != tcm->touch_report_rate_config &&
+             tcm->pwr_state == PWR_ON && tcm->bus_refmask != 0) {
++             /* if we are INCREASING the rate to 240Hz, that should happen immediately.
++             * However if we're reducing the rate, that gets delayed 2 seconds. */
+             /*
+              * Queue the work immediately for increasing touch report rate
+              * to 240Hz and queue 2 seconds delay work for decreasing
+              * touch report rate.
+              */
+@@ -3204,10 +3238,15 @@ static int syna_dev_probe(struct platform_device *pdev)
+     INIT_WORK(&tcm->set_palm_mode_work, syna_set_palm_mode_work);
+ 
+     tcm->touch_report_rate_config = CONFIG_HIGH_REPORT_RATE;
+     INIT_DELAYED_WORK(&tcm->set_report_rate_work, syna_set_report_rate_work);
+ 
++    tcm->start_time = ktime_get_ns();
++    /* creating the spinlock for the raw data buffer */
++    spin_lock_init(&tcm->raw_data_lock);
++    LOGI("Created raw data spinlock\n");
++
+     retval = syna_dev_request_irq(tcm);
+     if (retval < 0) {
+         LOGE("Fail to request the interrupt line\n");
+         goto err_request_irq;
+     }
+@@ -3235,10 +3274,11 @@ static int syna_dev_probe(struct platform_device *pdev)
+     if (retval < 0) {
+         LOGE("Fail to create the device sysfs\n");
+         syna_pal_mutex_free(&tcm->tp_event_mutex);
+         goto err_create_cdev;
+     }
++
+ #endif
+ 
+ #if defined(USE_DRM_BRIDGE)
+     retval = syna_register_panel_bridge(tcm);
+ #elif defined(ENABLE_DISP_NOTIFIER)
+diff --git a/syna_tcm2.h b/syna_tcm2.h
+index 949869f..fcd8b86 100644
+--- a/syna_tcm2.h
++++ b/syna_tcm2.h
+@@ -58,10 +58,14 @@
+ #endif
+ 
+ #include <linux/pm_qos.h>
+ #include "../../../gs-google/drivers/soc/google/vh/kernel/systrace.h"
+ 
++#include <linux/spinlock.h>
++#include <linux/ktime.h>
++#include <linux/timekeeping.h>
++
+ #define PLATFORM_DRIVER_NAME "synaptics_tcm"
+ 
+ #define TOUCH_INPUT_NAME "synaptics_tcm_touch"
+ #define TOUCH_INPUT_PHYS_PATH "synaptics_tcm/touch_input"
+ 
+@@ -431,10 +435,18 @@ struct syna_health_check {
+     u32 palm_cnt;
+     u32 pressed_cnt;
+     s64 longest_duration; /* ms unit */
+ };
+ 
++/* simple struct to store data on a touch point */
++struct touch_point_data {
++    unsigned int idx;
++    unsigned int x, y, z;
++    unsigned int status;
++    int wx, wy;
++};
++
+ /**
+  * @brief: context of the synaptics linux-based driver
+  *
+  * The structure defines the kernel specific data in linux-based driver
+  */
+@@ -648,10 +660,19 @@ struct syna_tcm {
+      *
+      * @return
+      *    on success, 0; otherwise, negative value on error.
+      */
+     int (*dev_suspend)(struct device *dev);
++
++    /* a spinlock for protecting the raw data buffer */
++    spinlock_t raw_data_lock;
++    /* a buffer for copying data to userspace */
++    u16* cdev_raw_data_buffer;
++    /* for checking the rate at which the firmware sends data */
++    u64 start_time, cur_time;
++    u32 received_packets;
++    struct touch_point_data touch_points[MAX_NUM_OBJECTS];
+ };
+ 
+ /**
+  * @brief: Helpers for cdevice nodes and sysfs nodes creation
+  *
+diff --git a/syna_tcm2_sysfs.c b/syna_tcm2_sysfs.c
+index f442f55..dde5921 100644
+--- a/syna_tcm2_sysfs.c
++++ b/syna_tcm2_sysfs.c
+@@ -2597,10 +2597,11 @@ exit:
+ static loff_t syna_cdev_llseek(struct file *filp,
+         loff_t off, int whence)
+ {
+     return -EFAULT;
+ }
++
+ /**
+  * syna_cdev_read()
+  *
+  * Used to read data through the device file.
+  * Function will use raw write approach.
+@@ -2618,29 +2619,105 @@ static ssize_t syna_cdev_read(struct file *filp,
+         char __user *buf, size_t count, loff_t *f_pos)
+ {
+     int retval = 0;
+     struct device *p_dev;
+     struct kobject *p_kobj;
+-	struct syna_tcm *tcm;
++    struct syna_tcm *tcm = NULL;
++    unsigned int idx;
++    int wx;
++    int wy;
++    unsigned int max_objects = 0;
++    struct tcm_touch_data_blob *touch_data;
++    struct tcm_objects_data_blob *object_data;
+ 
+     p_kobj = g_sysfs_dir->parent;
+     p_dev = container_of(p_kobj, struct device, kobj);
+     tcm = dev_get_drvdata(p_dev);
++    max_objects = tcm->tcm_dev->max_objects;
++
+ 
+     if (count == 0)
+         return 0;
+ 
++    if (count < (sizeof(struct touch_point_data) * 10) + (sizeof(u16) * tcm->tcm_dev->rows * tcm->tcm_dev->cols))
++        return -EINVAL;
++
++    if (tcm->cdev_raw_data_buffer == NULL) 
++    {
++        /* allocate a buffer for the raw data. devm_kzalloc associates the
++         * allocated memory with a device, so it gets freed automatically
++         * if/when the driver is unloaded and no manual deallocation is 
++         * necessary */
++        tcm->cdev_raw_data_buffer = devm_kzalloc(&tcm->pdev->dev, sizeof(u16) * tcm->tcm_dev->rows * tcm->tcm_dev->cols, GFP_KERNEL);
++        LOGI("Allocated touch data buffer\n");
++
++        /* on first time alloc, also configure the driver to report 
++         * the raw touch data. this code is taken from the function
++         * syna_sysfs_get_raw_data_store, and the REPORT_RAW code is
++         * the one we want (0x13) */
++        syna_set_bus_ref(tcm, SYNA_BUS_REF_SYSFS, true);
+         syna_pal_mutex_lock(&g_extif_mutex);
+ 
+-	retval = syna_cdev_ioctl_raw_read(tcm,
+-			(const unsigned char *)buf, count, count);
+-	if (retval != count) {
+-		LOGE("Invalid read operation, request:%d, return:%d\n",
+-			(unsigned int)count, retval);
+-	}
++        /* trying to disable doze mode in case that interferes with reading raw data
++         * at a reliable rate */
++        syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 1, RESP_IN_ATTN);
+ 
++        /* start touch reporting */
++        tcm->raw_data_report_code = REPORT_RAW;
++        syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, true);
++        reinit_completion(&tcm->raw_data_completion);
+         syna_pal_mutex_unlock(&g_extif_mutex);
++    }
++
++    /* this next section of code deals with extracting the current touch point
++     * data as reported from the firmware:
++     *  - acquire the mutex for this data to prevent it being updated mid-copy
++     *  - loop through the touch point data struct and copy out the fields we want
++     *  - release the mutex again */
++    syna_pal_mutex_lock(&tcm->tp_event_mutex);
++
++    touch_data = &tcm->tp_data;
++    object_data = &tcm->tp_data.object_data[0];
++
++    for (idx = 0; idx < max_objects; idx++) {
++        struct touch_point_data *current_point = &(tcm->touch_points[idx]);
++        current_point->idx = idx;
++        current_point->status = object_data[idx].status;
++        if (current_point->status != FINGER && current_point->status != GLOVED_OBJECT && current_point->status != PALM)
++            continue;
++
++        current_point->x = object_data[idx].x_pos;
++        current_point->y = object_data[idx].y_pos;
++        wx = object_data[idx].x_width;
++        wy = object_data[idx].y_width;
++        /* (original comment) Report major and minor in display pixels. */
++        current_point->wx = wx * tcm->hw_if->pixels_per_mm;
++        current_point->wy = wy * tcm->hw_if->pixels_per_mm;
++
++        if (object_data[idx].z == 0) {
++            current_point->z = 1;
++            LOGW("Get a touch coordinate with pressure = 0");
++        } else {
++            current_point->z = object_data[idx].z;
++        }
++    }
++
++    syna_pal_mutex_unlock(&tcm->tp_event_mutex);
++
++    /* now we grab a copy of the raw data buffer in the same way */
++    if(tcm->raw_data_buffer != NULL) 
++    {
++        spin_lock(&tcm->raw_data_lock);
++        memcpy(tcm->cdev_raw_data_buffer, tcm->raw_data_buffer, sizeof(u16) * tcm->tcm_dev->rows * tcm->tcm_dev->cols);
++        spin_unlock(&tcm->raw_data_lock);
++    }
++
++    /* copy the touch point data into the userspace buffer */
++    copy_to_user(buf, &(tcm->touch_points[0]), sizeof(struct touch_point_data) * max_objects);
++
++    /* copy the raw data into the userspace buffer */
++    copy_to_user(buf + (sizeof(struct touch_point_data) * max_objects), tcm->cdev_raw_data_buffer, sizeof(u16) * tcm->tcm_dev->rows * tcm->tcm_dev->cols);
+ 
+     return retval;
+ }
+ /**
+  * syna_cdev_write()
+@@ -2915,10 +2992,12 @@ int syna_cdev_create_sysfs(struct syna_tcm *tcm,
+     struct device *device = NULL;
+     static int cdev_major_num;
+ 
+     tcm->device_class = NULL;
+     tcm->device = NULL;
++    tcm->cdev_raw_data_buffer = NULL;
++    tcm->received_packets = 0;
+ 
+     tcm->is_attn_redirecting = false;
+ 
+     syna_pal_mutex_alloc(&g_extif_mutex);
+ #ifdef ENABLE_EXTERNAL_FRAME_PROCESS
